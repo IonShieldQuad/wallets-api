@@ -1,0 +1,31 @@
+[project]
+name = "wallets-api"
+version = "0.1.0"
+description = "REST API для работы с кошельками (тестовое задание, python dev)"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-q"
+filterwarnings = ["ignore::DeprecationWarning"]
+markers = [
+    "slow: тяжёлые проверки конкурентности (AC-5, AC-6) — можно отключить через -m 'not slow'",
+]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+exclude = [".venv", "alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["E501"]
+
+[tool.ruff.lint.flake8-bugbear]
+# B008: `Depends(...)` в значении по умолчанию — это штатный способ объявлять зависимости FastAPI,
+# а не ошибка. Перечисляем «неизменяемые» вызовы, чтобы B008 не срабатывал на них.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path", "fastapi.Body", "fastapi.Header"]
+
+[tool.ruff.format]
+quote-style = "double"

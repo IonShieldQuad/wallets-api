@@ -1,0 +1,51 @@
+# Wallets API — вся система одной командой (требование 3 тестового задания).
+#
+#   docker compose up --build
+#   curl -s http://127.0.0.1:8000/health/live
+#   docker compose exec app python -m scripts.seed --count 2
+#
+# Тесты (нужен только контейнер с базой):
+#   docker compose up -d db
+#   docker compose run --rm app pytest
+#
+# Миграции применяются контейнером app перед стартом uvicorn — отдельная команда не нужна.
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: wallets-db
+    environment:
+      POSTGRES_USER: wallets
+      POSTGRES_PASSWORD: wallets
+      POSTGRES_DB: wallets
+    ports:
+      # На этой машине 5432 уже занят локальным PostgreSQL 18, поэтому наружу отдан 55432.
+      # Порт контейнера внутри сети compose — по-прежнему 5432 (см. DECISIONS.md).
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - wallets-pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wallets -d wallets"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  app:
+    build: .
+    image: wallets-api:local
+    container_name: wallets-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      WALLETS_DATABASE_URL: postgresql+asyncpg://wallets:wallets@db:5432/wallets
+      WALLETS_LOG_LEVEL: INFO
+    ports:
+      - "127.0.0.1:8000:8000"
+    stop_grace_period: 10s
+
+volumes:
+  wallets-pgdata:

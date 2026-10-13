@@ -1,0 +1,23 @@
+# Рабочие заметки — только локально, в репозиторий не попадают
+/NOTES-local.md
+
+# Секреты — никогда не коммитить
+.env
+*.env
+!.env.example
+
+# Данные Postgres (том compose живёт вне репозитория, но на хосте может появиться локально)
+pgdata/
+*.sql.gz
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/

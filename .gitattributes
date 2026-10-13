@@ -1,0 +1,9 @@
+# Dockerfile и compose читаются Linux-демоном: CRLF в строках с продолжением (`\`)
+# ломает сборку. Держим LF в этих файлах независимо от настроек git на Windows.
+Dockerfile text eol=lf
+*.yml text eol=lf
+*.sh text eol=lf
+docker-compose*.yml text eol=lf
+
+# Остальное — как принято в репозитории, содержимое в LF.
+* text=auto
