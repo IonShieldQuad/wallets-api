@@ -131,7 +131,7 @@ GET /api/v1/wallets/{wallet_uuid}
 
 | Веха | Что | Критерий выхода |
 |---|---|---|
-| **M0** | Каркас: Docker, compose, конфиг, Alembic, модель, схемы, тесты-заготовки, SPEC | `docker compose config -q` валиден, `ruff` чистый, `pytest` собирается (зелёный только health) |
+| **M0** | Каркас репозитория: Docker, compose, конфиг, Alembic, модель, схемы, контракт эндпоинтов | `docker compose config -q` валиден, `ruff` чистый, `pytest` собирается |
 | **M1** | Модель и миграция (`alembic revision --autogenerate`) | AC-7 |
 | **M2** | Сервисный слой и оба эндпоинта, коды ошибок | AC-1…AC-4 зелёные |
 | **M3** | Конкурентность: блокировка строки или атомарный `UPDATE` | AC-5, AC-6 зелёные |

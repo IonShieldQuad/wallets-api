@@ -36,27 +36,55 @@ docker compose down          # контейнеры и сеть
 docker compose down -v       # ещё и данные Postgres
 ```
 
+## Проверено
+
+| Что | Чем подтверждено |
+|---|---|
+| Оба эндпоинта, коды ответов, формат денег | 30 тестов `pytest`, включая валидацию входа и оба конкурентных сценария |
+| Конкурентность: нет потерянных обновлений, баланс не уходит в минус | `scripts/concurrency_probe.py` против запущенного сервиса: 100 параллельных `DEPOSIT` по 10 → баланс ровно `1000.00`; 20 параллельных `WITHDRAW` по 100 → 10 успехов, 10 отказов `409`, баланс `0.00` |
+| Миграции | `alembic upgrade head` → `downgrade base` → `upgrade head` на чистой базе: схема создаётся, удаляется и создаётся заново |
+| «Одна команда» и сценарий из README | `docker compose up --build`, оба контейнера healthy, запросы дают указанные ответы и коды |
+| PEP8 | `ruff check .` и `ruff format --check .` — без замечаний |
+
+Проверка конкурентности воспроизводится на запущенном сервисе. Скрипт меняет баланс,
+поэтому ему нужен отдельный кошелёк:
+
+```bash
+docker compose exec app python -m scripts.seed --count 1
+docker compose exec app python -m scripts.concurrency_probe --wallet <WALLET_UUID> --deposits 100 --amount 10 --withdrawals 20 --withdraw-amount 100
+```
+
 ## Эндпоинты
+
+**Проще всего проверить руками здесь: <http://127.0.0.1:8000/docs>** — интерактивная документация
+FastAPI, где запрос отправляется кнопкой «Execute» и ничего не нужно экранировать.
+
+Ниже — те же запросы через curl. Команды специально **одной строкой** и с двойными кавычками:
+в cmd.exe обратный слэш не переносит строку (там нужен `^`), а одинарные кавычки вокруг JSON
+передаются в curl буквально — он получает невалидный JSON и отвечает `json_invalid`.
+Вариант ниже работает и в cmd.exe, и в bash.
 
 ### Изменение баланса
 
 ```bash
-curl -s -X POST "http://127.0.0.1:8000/api/v1/wallets/<WALLET_UUID>/operation" \
-     -H "Content-Type: application/json" \
-     -d '{"operation_type": "DEPOSIT", "amount": 1000}'
-# → 200 {"wallet_id": "<uuid>", "operation_type": "DEPOSIT", "amount": "1000.00", "balance": "1000.00"}
+curl -s -X POST "http://127.0.0.1:8000/api/v1/wallets/<WALLET_UUID>/operation" -H "Content-Type: application/json" -d "{\"operation_type\": \"DEPOSIT\", \"amount\": 1000}"
+# → 200 {"wallet_id":"<uuid>","balance":"1000.00","operation_type":"DEPOSIT","amount":"1000.00"}
 
-curl -s -X POST "http://127.0.0.1:8000/api/v1/wallets/<WALLET_UUID>/operation" \
-     -H "Content-Type: application/json" \
-     -d '{"operation_type": "WITHDRAW", "amount": 300}'
-# → 200 {"wallet_id": "<uuid>", "operation_type": "WITHDRAW", "amount": "300.00", "balance": "700.00"}
+curl -s -X POST "http://127.0.0.1:8000/api/v1/wallets/<WALLET_UUID>/operation" -H "Content-Type: application/json" -d "{\"operation_type\": \"WITHDRAW\", \"amount\": 300}"
+# → 200 {"wallet_id":"<uuid>","balance":"700.00","operation_type":"WITHDRAW","amount":"300.00"}
+
+curl -s -X POST "http://127.0.0.1:8000/api/v1/wallets/<WALLET_UUID>/operation" -H "Content-Type: application/json" -d "{\"operation_type\": \"WITHDRAW\", \"amount\": 100000}"
+# → 409 {"detail":"insufficient funds"}   (и баланс не меняется)
 ```
 
 ### Получение баланса
 
 ```bash
 curl -s "http://127.0.0.1:8000/api/v1/wallets/<WALLET_UUID>"
-# → 200 {"wallet_id": "<uuid>", "balance": "700.00"}
+# → 200 {"wallet_id":"<uuid>","balance":"700.00"}
+
+curl -s "http://127.0.0.1:8000/api/v1/wallets/6c1d4c68-6b3d-4e2c-9a5e-2f0a4d8b1c33"
+# → 404 {"detail":"wallet not found"}
 ```
 
 ### Коды ответов
@@ -76,14 +104,9 @@ curl -s "http://127.0.0.1:8000/api/v1/wallets/<WALLET_UUID>"
 
 ```bash
 docker compose up -d db
-docker compose run --rm app pytest            # весь набор
-docker compose run --rm app pytest -m "not slow"   # без тяжёлых проверок конкурентности
-```
-
-Или на хосте, без Docker:
-
-```bash
-.venv/Scripts/python -m pytest
+.venv/Scripts/python -m pytest                     # на хосте: быстро и видит свежие файлы
+.venv/Scripts/python -m pytest -m "not slow"        # без тяжёлых проверок конкурентности
+docker compose run --rm --build app pytest          # в контейнере; --build нужен после правки кода
 ```
 
 Линтер (PEP8-часть задания):
@@ -97,12 +120,18 @@ docker compose run --rm app pytest -m "not slow"   # без тяжёлых пр�
 
 ```bash
 # новая миграция после правки app/models.py
-docker compose run --rm app alembic revision --autogenerate -m "create wallets"
-docker compose run --rm app alembic upgrade head
-docker compose run --rm app alembic downgrade -1
+.venv/Scripts/python -m alembic revision --autogenerate -m "create wallets"
+.venv/Scripts/python -m alembic upgrade head
+.venv/Scripts/python -m alembic downgrade -1
 ```
 
-`alembic upgrade head` вручную не нужен: контейнер `app` применяет миграции перед стартом uvicorn.
+Генерация идёт **на хосте**, через venv: контейнер `app` собран из копии кода, поэтому файл,
+созданный внутри `docker compose run`, останется в контейнере и пропадёт вместе с ним.
+(В cmd.exe путь тот же: `.venv\Scripts\python -m alembic …` — или активировать venv и звать
+`alembic` напрямую.)
+
+Обычно `alembic upgrade head` вручную не нужен: контейнер `app` применяет миграции перед стартом
+uvicorn, а тесты накатывают их сами (`tests/conftest.py`).
 
 ## Конфигурация
 
@@ -138,6 +167,7 @@ app/
 alembic/             миграции (env.py настроен на async-движок)
 tests/               pytest: conftest.py + тесты по критериям приёмки
 scripts/seed.py      создать кошельки для ручной проверки
+scripts/concurrency_probe.py   параллельные запросы к запущенному сервису (INV-1, INV-2)
 ```
 
 

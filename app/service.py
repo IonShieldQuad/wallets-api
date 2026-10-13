@@ -19,6 +19,7 @@ from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.errors import InsufficientFundsError, WalletNotFoundError
 from app.models import Wallet
 from app.schemas import OperationType
 
@@ -30,16 +31,24 @@ class WalletService:
         self._session = session
 
     async def get_wallet(self, wallet_id: uuid.UUID) -> Wallet:
-        """Вернуть кошелёк или поднять ``WalletNotFoundError``.
+        """Вернуть кошелёк или поднять ``WalletNotFoundError``."""
 
-        TODO: см. SPEC.md §3 (FR-2) и §5 (коды ответов).
-        """
-        raise NotImplementedError("TODO: SPEC.md §3 FR-2, §5")
+        wallet = await self._session.get(Wallet, wallet_id)
+        if wallet is None:
+            raise WalletNotFoundError(wallet_id)
+        return wallet
 
     async def apply_operation(self, wallet_id: uuid.UUID, operation: OperationType, amount: Decimal) -> Wallet:
-        """Применить DEPOSIT/WITHDRAW и вернуть кошелёк с новым балансом.
+        """Применить DEPOSIT/WITHDRAW и вернуть кошелёк с новым балансом."""
 
-        TODO: базовый сценарий — SPEC.md §3 (FR-1, FR-3, FR-4).
-        TODO: корректность под параллельными запросами — SPEC.md §4 (INV-1…INV-3).
-        """
-        raise NotImplementedError("TODO: SPEC.md §3 и §4")
+        async with self._session.begin():
+            wallet = await self._session.get(Wallet, wallet_id, with_for_update=True)
+            if wallet is None:
+                raise WalletNotFoundError(wallet_id)
+            if operation == OperationType.DEPOSIT:
+                wallet.balance += amount
+            else:
+                if wallet.balance < amount:
+                    raise InsufficientFundsError(wallet_id, wallet.balance, amount)
+                wallet.balance -= amount
+        return wallet
